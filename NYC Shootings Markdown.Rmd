@@ -1,0 +1,178 @@
+---
+title: "NYC Shootings by Race & Age Group"
+author: "R. Viele"
+date: "2024-10-06"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readr)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Importing
+
+First, the URL was imported and assigned to a variable. I made sure that the file to be imported was **globally** available and not from a local computer file.
+
+```{r import url, include=TRUE}
+urls <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv"
+```
+
+I then read the csv file from the URL and assigned it to a variable. In order to get an idea of the data and all attributes, I called for the file head to show a summary of the first 10 rows, which gives a complete list of attributes and their data types.
+
+
+```{r read and spec, include=TRUE}
+NYC_Shootings <- read.csv(urls)
+head(NYC_Shootings, 10)
+```
+
+## Tidying the Data
+
+I wanted to see my full data table including all column attributes. To do that I printed the head of my data set.
+
+Seeing my data fully, there were some columns I'd like to get rid of. I didn't need the Latitude, Longitude, X_coord_CD, y_coord_CD, Lon_Lat, and INCIDENT_KEY. There was also a lot of missing data in the LOC_CLASSFCTN_DESC and LOC_OF_OCCUR_DESC, which I also didn't need so I removed them from my data. This brought the original 21 attributes to 13. Taking a look at the remaining data gave the following:
+
+
+```{r attribute removal, include = TRUE}
+NYC_Shootings <- NYC_Shootings %>%
+  select(-c(LOC_OF_OCCUR_DESC, LOC_CLASSFCTN_DESC, X_COORD_CD, Y_COORD_CD, Latitude, Longitude, Lon_Lat, INCIDENT_KEY))
+head(NYC_Shootings, 10)
+```
+
+Looking at the above data I found that the 'Jurisdiction code', the boolean attribute named 'statistical murder flag', and the precinct were also unneeded so I deselected them from the table leaving now just 11 attributes.
+
+I started to see which attributes had gaps and which were most filled out. It seems victim demographics are more complete than perpetrator demographics and so I began to find how I'd like to pivot my data around the more complete victim attributes. I still needed to find a way to eliminate null values.
+
+
+```{r more tidying, include=TRUE}
+NYC_Shootings <- NYC_Shootings %>%
+  select(-c(JURISDICTION_CODE, STATISTICAL_MURDER_FLAG, PRECINCT))
+head(NYC_Shootings, 10)
+```
+
+## Questions Arising From Data
+
+At this point there were some obvious ways to cross analyze the data. For one, we could look at variables that were more complete and how they correlated with each other. For example, we could check shootings by boro, or age and race demographics of the victim. I had decided to eliminate specific location and time/date data out completely except for the Borough, as well as data referring to the perpetrator since this is where the most null values were. The new data set was assigned to the variable NYC_Tidy and the below code shows the first 10 rows of the dataframe.  
+
+```{R Final Tidy, include=TRUE}
+NYC_Tidy <- NYC_Shootings %>%
+  select(-c(LOCATION_DESC, , PERP_AGE_GROUP, PERP_SEX, PERP_RACE, OCCUR_DATE, OCCUR_TIME))
+head(NYC_Tidy, 10)
+```
+
+Now that I had the above dataframe of 4 attributes (borough, victim age group, victim sex, victim race) and over 28,000 rows of data points. I began asking in which ways would I like to see visual correlations between the data I had narrowed down. I began by calculating a variable that would output the number of shooting occurrences of all combinations of the attributes using the **n()** function. I assigned the new data to NYC_sum_shootings
+
+```{r pivoting data, include=TRUE}
+NYC_sum_shootings <- NYC_Tidy %>%
+  dplyr::summarise(n=dplyr::n(), .by=c(VIC_RACE, BORO, VIC_AGE_GROUP, VIC_SEX))
+head(NYC_sum_shootings, n = 10)
+```
+
+The above combinatoric dataframe of 282 rows counted the total shooting statistic based on all the combinations of the victims race, the borough of the shooting, the victims sex, and the victims age group. I then sorted by number of shootings in ascending order with the following code chunk. 
+
+```{r sort n head, include = TRUE}
+NYC_sum_shootings_sort <- NYC_sum_shootings[order(-NYC_sum_shootings$n), ]
+head(NYC_sum_shootings_sort, n = 10)
+```
+
+## Data Mutations & Groupings
+
+From the previous table we see that the largest number of **victims** by shooting were black men between the ages of 25 - 44 in Brooklyn. Note that the victims sex in the top ten shooting occurrences are only male, as well as the race being nearly all Black with the exception of row 9.
+
+Now we can look at the demographics and location of the least number of shooting occurrences with the below.
+
+```{r sort n tail, include = TRUE}
+tail(NYC_sum_shootings_sort, n = 20)
+```
+
+Since the last 20 rows all have only a single shooting occurrence, I sorted out all n numbers that were less than 50 to collapse the data a bit. The result was the below dataframe with 61 rows, a noise improvement from the original 282 rows. The below shows all 61 rows. 
+
+```{r select greater than 50, include = TRUE}
+NYC_sum_shootings_compact <- NYC_sum_shootings_sort[NYC_sum_shootings_sort$n > 50, ]
+NYC_sum_shootings_compact
+```
+
+Now I have the ability to pivot and sum the data over the four different attributes of race, borough, age group, and sex using the below code.
+
+```{r sums, include = TRUE}
+boro <- NYC_sum_shootings_compact %>%
+  group_by(BORO) %>%
+  summarise(total = sum(n))
+boro <- boro %>% arrange(desc(total)) 
+race <- NYC_sum_shootings_compact %>%
+  group_by(VIC_RACE) %>%
+  summarise(total = sum(n))
+race <- race %>% arrange(desc(total))
+age_group <- NYC_sum_shootings_compact %>%
+  group_by(VIC_AGE_GROUP) %>%
+  summarise(total = sum(n))
+age_group <- age_group %>% arrange(desc(total))
+sex <- NYC_sum_shootings_compact %>%
+  group_by(VIC_SEX) %>%
+  summarise(total = sum(n))
+sex <- sex %>% arrange(desc(total))
+boro
+race
+age_group
+sex
+```
+
+The **group_by** function can handle multiple arguments so that we can produce statistics for any combination of our attributes. Note that one could code the repetitive lines in the previous code chunk into a new function to call on different attributes stats more quickly.
+
+
+## Visualizations
+
+I began with a simple visualization by creating a bar plot of race of the victim against total of shootings. I believe even with this first plot, the stark disparity of the shooting data as it pertains to victim race is shown. There was a daunting difference between shootings of all the races and the Black community. 
+
+```{r plot race, include=TRUE}
+race %>%
+  ggplot(aes(x=VIC_RACE, y=total, fill = VIC_RACE))+
+  geom_col()+
+  theme(axis.text.x = element_text(angle = 35, hjust = 1), legend.position = "none")+
+  labs(title = "NYC Shootings by Victim's Race", x = "Victim's Race", y = "Total Shootings")
+```
+
+To go further I wanted to analyze the shooting occurrences by the victims race and age group. I created a new dataframe that grouped the two and created a heat map to represent the 3 variables.
+
+```{r race and age, include = TRUE}
+race_age <- NYC_sum_shootings_compact %>%
+  group_by(VIC_RACE, VIC_AGE_GROUP) %>%
+  summarise(total = sum(n))
+race_age = race_age %>% arrange(desc(total))
+head(race_age, n = 5)
+```
+
+```{r plot race_age, include=TRUE}
+race_age %>%
+  ggplot(aes(x=VIC_RACE, y=VIC_AGE_GROUP, fill = total))+
+  geom_tile(alpha = 0.75)+
+  geom_text(aes(label = total))+
+  scale_fill_gradientn(colors = c("white", "yellow", "orange", "red"))+
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(title = "NYC Shootings by Victim's Race & Age", x = "Victim's Race", y = "Victim's Age Group", color = "Total Shootings")
+```
+
+## Models
+
+I used a Generalized Liner Model (GLM) to model the values from the above data of race_age. This specifically will give a T-Value which is the likelyhood that future shootings will be connected to each demographic. It is calculated by taking the estimate value and adjusting for error. The higher (or lower) the T-value is from 0, means its more (or less) likely to happen. The P-Value for the data shows the significance of the T-value. If the P-value is less than 5%, it is considered to contradict the null hypothesis and therefor is a good predictor within your model. Anything higher that about 10% means your model can't accurately predict future occurrences, in this case, shootings. 
+
+```{r model, include = TRUE}
+model <- glm(total ~ VIC_RACE + VIC_AGE_GROUP, data = race_age)
+summary(model)
+```
+
+## Conclusion
+
+The most model turned out to show future shootings to happen to victims who are Black, with the highest t-value of 2.866, and a significance (p-value) of 0.0286. The lowest predictive shootings would happen to white victims with a t-value of 0.032, meaning it is unlikely. However, the p-value for this predictive value is extremely high at 0.9758, meaning the outcome is not significant enough to hold true given the data. The second most significant value would be shootings to occur to victims of age group 25-44 (p-value = 0.0876, t-value = 2.039). 
+
+
+## Sources of Bias
+
+The sources of personal bias throughout this project could stem from my political views and my beliefs on the treatment of peoples and groups on the bases of their age, sex, and race. I've also have previous personal issues at work that targeted me based on these protected rights. 
+
+Though the data that I decided to highlight here seems to correlate to these sources of bias, the actual methods and analytics used throughout the report did not contort or manipulate the data so as to alter it from it's originals source. In this way I have mitigated bias by not changing data, yet there might be bias in the way the data was presented. 
