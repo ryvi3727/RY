@@ -1,6 +1,6 @@
 ---
 title: "NYC Shootings by Race & Age Group"
-author: "R. Viele"
+author: 
 date: "2024-10-06"
 output:
   pdf_document: default
